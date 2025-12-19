@@ -40,7 +40,7 @@ class TrackData:
         track_w = max_x - min_x
         track_h = max_y - min_y
 
-        scale = min(screen_width / track_w, screen_height / track_h) * 0.9
+        scale = min(screen_width / track_w, screen_height / track_h) * 0.7
 
         x_offset = (screen_width - track_w * scale) / 2
         y_offset = (screen_height - track_h * scale) / 2
