@@ -43,7 +43,7 @@ for i in range(len(race.track_x)):
     sx, sy = world_to_screen(race.track_x[i], race.track_y[i])
     track_points.append((sx, sy))
 
-current_frame = 0
+current_frame = 0.0
 paused = False
 running = True
 
@@ -51,6 +51,9 @@ print(f"\nStarting replay with {len(race.frames)} frames...")
 print("Controls: SPACE=pause, LEFT/RIGHT=skip, UP/DOWN=speed, ESC=quit\n")
 
 while running:
+    dt_ms = clock.tick(165)
+    dt = dt_ms / 1000.0
+
     # Event handling
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -73,7 +76,8 @@ while running:
     
     # Update frame
     if not paused:
-        current_frame += PLAYBACK_SPEED
+        simulated_dt = dt * PLAYBACK_SPEED
+        current_frame += simulated_dt / race.frame_interval
         if current_frame >= len(race.frames):
             current_frame = len(race.frames) - 1
             paused = True
@@ -81,6 +85,11 @@ while running:
     frame_idx = int(current_frame)
     frame = race.frames[frame_idx]
     
+    current_lap = 0
+    for d in frame["drivers"].values():
+        if d["active"]:
+            current_lap = max(current_lap, d["lap"])
+
     # Clear screen
     screen.fill((20, 20, 20))
     
@@ -106,8 +115,11 @@ while running:
     time_text = title_font.render(f"Time: {frame['time']:.1f}s", True, (255, 255, 255))
     screen.blit(time_text, (20, 20))
     
+    lap_text = title_font.render(f"Lap: {current_lap}", True, (255, 255, 255))
+    screen.blit(lap_text, (20, 60))
+
     speed_text = font.render(f"Speed: {PLAYBACK_SPEED}x", True, (255, 255, 255))
-    screen.blit(speed_text, (20, 70))
+    screen.blit(speed_text, (20, 120))
     
     if paused:
         pause_text = title_font.render("PAUSED", True, (255, 50, 50))
@@ -116,7 +128,6 @@ while running:
     
     # Update display
     pygame.display.flip()
-    clock.tick(60)
 
 pygame.quit()
 print("Replay finished!")
