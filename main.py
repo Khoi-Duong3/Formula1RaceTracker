@@ -2,9 +2,9 @@ import pygame
 import sys
 from race_data import RaceData
 
-WIDTH, HEIGHT = 1920, 1080
+WIDTH, HEIGHT = 1600, 900
 GP_YEAR = 2025
-GP_LOCATION = "Monza"
+GP_LOCATION = "Shang Hai"
 SESSION_TYPE = "R"
 PLAYBACK_SPEED = 1.0
 
@@ -68,7 +68,7 @@ while running:
             elif event.key == pygame.K_RIGHT:
                 current_frame = min(len(race.frames) - 1, current_frame + 10)
             elif event.key == pygame.K_UP:
-                PLAYBACK_SPEED = min(4.0, PLAYBACK_SPEED * 2)
+                PLAYBACK_SPEED = min(32.0, PLAYBACK_SPEED * 2)
                 print(f"Playback speed: {PLAYBACK_SPEED}x")
             elif event.key == pygame.K_DOWN:
                 PLAYBACK_SPEED = max(0.25, PLAYBACK_SPEED / 2)
@@ -95,7 +95,7 @@ while running:
     
     # Draw track
     if len(track_points) > 2:
-        pygame.draw.lines(screen, (80, 80, 80), True, track_points, 3)
+        pygame.draw.aalines(screen, (80, 80, 80), True, track_points, 3)
     
     # Draw drivers
     for driver_num, driver in frame['drivers'].items():
@@ -115,7 +115,7 @@ while running:
     time_text = title_font.render(f"Time: {frame['time']:.1f}s", True, (255, 255, 255))
     screen.blit(time_text, (20, 20))
     
-    lap_text = title_font.render(f"Lap: {current_lap}", True, (255, 255, 255))
+    lap_text = title_font.render(f"Lap: {current_lap}/{race.session._total_laps}", True, (255, 255, 255))
     screen.blit(lap_text, (20, 60))
 
     speed_text = font.render(f"Speed: {PLAYBACK_SPEED}x", True, (255, 255, 255))

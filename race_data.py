@@ -15,10 +15,13 @@ class RaceData:
         self.track_y = None
         self.frames = []
         self.frame_interval = 0.1
+        self.global_start = None
+        self.lap_timeline = None
 
         self.load_session()
         self.load_track()
         self.load_drivers()
+        self.build_lap_timeline()
         self.align_timelines_and_generate_frames()
 
     def load_session(self):
@@ -98,6 +101,45 @@ class RaceData:
 
         print(f"Loaded {len(self.driver_data)} drivers")
 
+    def hex_to_rgb(self, hex_colour):
+        hex_colour = hex_colour.lstrip("#")
+        return tuple(int(hex_colour[i : i + 2], 16) for i in (0, 2, 4))
+
+    def build_lap_timeline(self):
+        laps = self.session.laps.copy()
+        laps = laps.loc[~laps["LapStartTime"].isna()]
+       
+        p1 = laps[laps["Position"] == 1.0]
+        if not p1.empty:
+            leader_laps = p1
+        else:
+            default_number = laps["DriverNumber"].iloc[0]
+            leader_laps = laps[laps["DriverNumber"] == default_number]
+        
+        if "LapStartSessionTime" in leader_laps.columns:
+            leader_laps["lap_start_s"] = (leader_laps["LapStartSessionTime"].dt.total_seconds())
+        else:
+            leader_laps["lap_start_s"] = (leader_laps["LapStartTime"].dt.total_seconds())
+
+        leader_laps = leader_laps.sort_values("LapNumber")
+        lap_numbers = leader_laps["LapNumber"].to_numpy(dtype=int)
+        start_times = leader_laps["lap_start_s"].to_numpy()
+        end_times = np.empty_like(start_times, dtype=float)
+        end_times[:-1] = start_times[1:]
+
+        latest_time = max(max(d["timestamps"]) for d in self.driver_data.values())
+        end_times[-1] = latest_time
+
+        self.lap_timeline = list(zip(start_times, end_times, lap_numbers))
+
+    def lap_for_time(self, time):
+        session_time = time + self.global_start
+        for start, end, lap_num in self.lap_timeline:
+            if start <= session_time < end:
+                return int(lap_num)
+
+        return int(self.lap_timeline[-1][2])
+
     def align_timelines_and_generate_frames(self):
         print("Aligning timelines and generating frames...")
 
@@ -109,6 +151,8 @@ class RaceData:
         global_start = min(d["timestamps"][0] for d in self.driver_data.values())
         global_end = max(d["timestamps"][-1] for d in self.driver_data.values())
         race_duration = global_end - global_start
+
+        self.global_start = global_start
 
         # Normalise each driver timeline so replay time starts at 0
         for d in self.driver_data.values():
@@ -122,6 +166,7 @@ class RaceData:
 
         current_time = 0.0
         while current_time <= max_time:
+            frame_lap = self.lap_for_time(current_time)
             frame = {
                 "time": current_time,
                 "drivers": {},
@@ -134,9 +179,6 @@ class RaceData:
                     x_pos = np.interp(current_time, ts, data["x"])
                     y_pos = np.interp(current_time, ts, data["y"])
 
-                    lap_val = np.interp(current_time, ts, data["lap_numbers"])
-                    lap = int(round(lap_val))
-
                     active = True
                 else:
                     x_pos = data["x"][-1]
@@ -147,7 +189,7 @@ class RaceData:
                 frame["drivers"][driver_number] = {
                     "x": x_pos,
                     "y": y_pos,
-                    "lap": lap,
+                    "lap": frame_lap,
                     "abbreviation": data["abbreviation"],
                     "colour": data["colour"],
                     "active": active,
@@ -160,7 +202,3 @@ class RaceData:
             f"Generated {len(self.frames)} frames "
             f"({max_time:.1f}s race duration)"
         )
-
-    def hex_to_rgb(self, hex_colour):
-        hex_colour = hex_colour.lstrip("#")
-        return tuple(int(hex_colour[i : i + 2], 16) for i in (0, 2, 4))
