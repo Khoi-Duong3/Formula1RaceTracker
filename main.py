@@ -1,10 +1,11 @@
 import pygame
 import sys
 from race_data import RaceData
+from leaderboard import draw_leaderboard
 
-WIDTH, HEIGHT = 1600, 900
-GP_YEAR = 2025
-GP_LOCATION = "Shang Hai"
+WIDTH, HEIGHT = 1280, 720
+GP_YEAR = 2024
+GP_LOCATION = "Brazil"
 SESSION_TYPE = "R"
 PLAYBACK_SPEED = 1.0
 
@@ -28,7 +29,7 @@ def world_to_screen(x, y):
     track_w = max_x - min_x
     track_h = max_y - min_y
 
-    scale = min(WIDTH / track_w, HEIGHT / track_h) * 0.8
+    scale = min(WIDTH / track_w, HEIGHT / track_h) * 0.7
 
     x_offset = (WIDTH - track_w * scale) / 2
     y_offset = (HEIGHT - track_h * scale) / 2
@@ -50,6 +51,8 @@ running = True
 print(f"\nStarting replay with {len(race.frames)} frames...")
 print("Controls: SPACE=pause, LEFT/RIGHT=skip, UP/DOWN=speed, ESC=quit\n")
 
+
+
 while running:
     dt_ms = clock.tick(165)
     dt = dt_ms / 1000.0
@@ -68,7 +71,7 @@ while running:
             elif event.key == pygame.K_RIGHT:
                 current_frame = min(len(race.frames) - 1, current_frame + 10)
             elif event.key == pygame.K_UP:
-                PLAYBACK_SPEED = min(32.0, PLAYBACK_SPEED * 2)
+                PLAYBACK_SPEED = min(64.0, PLAYBACK_SPEED * 2)
                 print(f"Playback speed: {PLAYBACK_SPEED}x")
             elif event.key == pygame.K_DOWN:
                 PLAYBACK_SPEED = max(0.25, PLAYBACK_SPEED / 2)
@@ -82,16 +85,17 @@ while running:
             current_frame = len(race.frames) - 1
             paused = True
     
+    # Clear screen
+    screen.fill((20, 20, 20))
+
     frame_idx = int(current_frame)
     frame = race.frames[frame_idx]
-    
+    draw_leaderboard(screen, font, title_font, race, frame["time"])
+
     current_lap = 0
     for d in frame["drivers"].values():
         if d["active"]:
             current_lap = max(current_lap, d["lap"])
-
-    # Clear screen
-    screen.fill((20, 20, 20))
     
     # Draw track
     if len(track_points) > 2:
@@ -119,7 +123,7 @@ while running:
     screen.blit(lap_text, (20, 60))
 
     speed_text = font.render(f"Speed: {PLAYBACK_SPEED}x", True, (255, 255, 255))
-    screen.blit(speed_text, (20, 120))
+    screen.blit(speed_text, (200,70))
     
     if paused:
         pause_text = title_font.render("PAUSED", True, (255, 50, 50))
