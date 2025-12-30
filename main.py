@@ -1,11 +1,10 @@
 import pygame
-import sys
 from race_data import RaceData
 from leaderboard import draw_leaderboard
 
 WIDTH, HEIGHT = 1280, 720
-GP_YEAR = 2024
-GP_LOCATION = "Brazil"
+GP_YEAR = 2025
+GP_LOCATION = "Zandvoort"
 SESSION_TYPE = "R"
 PLAYBACK_SPEED = 1.0
 

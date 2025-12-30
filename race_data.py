@@ -12,6 +12,7 @@ class RaceData:
         self.drivers = []
         self.driver_data = {}
         self.driver_compounds = {}
+        self.driver_status = {}
         self.track_x = None
         self.track_y = None
         self.track_length = None
@@ -23,8 +24,10 @@ class RaceData:
         self.position_timeline = {}
         self.last_visual_order = None
         self.last_visual_time = -1.0
+        self.lap_position_map = {}
 
         self.load_session()
+        self.load_results()
         self.build_compound_map()
         self.load_track()
         self.build_track_distancee()
@@ -39,6 +42,22 @@ class RaceData:
         self.session = fastf1.get_session(self.year, self.location, self.session_type)
         self.session.load(telemetry=True, weather=False, laps=True)
         print(f"Session loaded: {self.session.event['EventName']}")
+
+    def load_results(self):
+        if self.session and hasattr(self.session, "results"):
+            for _, row in self.session.results.iterrows():
+                driver_num = str(int(row['DriverNumber']))
+                status = str(row["Status"])
+                is_finished = status.lower() in ['finished'] or '+' in status
+
+                self.driver_status[driver_num] = {
+                    "Status": status,
+                    'is_dnf': not is_finished,
+                    'grid': row.get('GridPosition', 20.0)
+
+                }
+        
+        print("Driver status loaded.")
 
     def load_track(self):
         fastest_lap = self.session.laps.pick_fastest()
@@ -81,11 +100,8 @@ class RaceData:
                 else:
                     lap_numbers = np.ones(len(full_telemetry), dtype=int)
                 
-                # Use session-relative time, not per-lap Time
                 if "SessionTime" in full_telemetry.columns:
-                    timestamps = (
-                        full_telemetry["SessionTime"].dt.total_seconds().values
-                    )
+                    timestamps = (full_telemetry["SessionTime"].dt.total_seconds().values)
                 else:
                     timestamps = full_telemetry["Time"].dt.total_seconds().values
 
@@ -97,7 +113,7 @@ class RaceData:
 
                 self.driver_data[driver_number] = {
                     "abbreviation": abbreviation,
-                    "timestamps": timestamps,  # still absolute here
+                    "timestamps": timestamps,
                     "x": rotated_x,
                     "y": rotated_y,
                     "lap_numbers": lap_numbers,
@@ -148,6 +164,20 @@ class RaceData:
                 return int(lap_num)
 
         return int(self.lap_timeline[-1][2])
+
+    def build_lap_position_map(self):
+        if self.session and hasattr(self.session, "laps"):
+            valid = self.session.laps[['DriverNumber', 'LapNumber', 'Position']].dropna()
+
+            for _, row in valid.iterrows():
+                driver = str(int(row["DriverNumber"]))
+                lap = int(row["LapNumber"])
+                pos = int(row["Position"])
+
+                if driver not in self.lap_position_map:
+                    self.lap_position_map[driver] = {}
+                
+                self.lap_position_map[driver][lap] = pos
 
     def align_timelines_and_generate_frames(self):
         print("Aligning timelines and generating frames...")
@@ -214,7 +244,6 @@ class RaceData:
 
     def build_position_timeline(self):
         laps = self.session.laps.copy()
-        laps = laps.loc[~laps["LapStartTime"].isna()]
 
         if "LapStartSessionTime" in laps.columns:
             laps["lap_start_s"] = laps["LapStartSessionTime"].dt.total_seconds()
@@ -223,13 +252,26 @@ class RaceData:
         
         laps = laps.sort_values(["DriverNumber", "LapNumber"])
 
-        for driver, driver_laps in laps.groupby("DriverNumber"):
-            driver_laps = driver_laps.sort_values("LapNumber")
+        for driver_num in self.session.drivers:
+            driver = str(driver_num)
+            driver_laps = laps[laps["DriverNumber"] == driver]
+
+            if driver_laps.empty or driver_laps["LapStartTime"].isna().all():
+                start_t = self.global_start if self.global_start else 0
+                grid_pos = 20
+                if driver in self.driver_status:
+                    grid_pos = int(self.driver_status[driver]["grid"])
+
+                segments = [(float(start_t), float(start_t + 1.0), grid_pos, 0)]
+                self.position_timeline[driver] = segments
+                continue
+
+            driver_laps = driver_laps.loc[~driver_laps["LapStartTime"].isna()]
             start_times = driver_laps["lap_start_s"].to_numpy()
             lap_nums = driver_laps["LapNumber"].astype(int).to_numpy()
             positions = driver_laps["Position"].to_numpy()
 
-            if len(start_times) == 0 or (positions.size > 0 and all(pd.isna(positions))):
+            if len(start_times) == 0:
                 continue
 
             end_times = np.empty_like(start_times, dtype=float)
@@ -251,13 +293,100 @@ class RaceData:
             self.position_timeline[driver] = segments
 
     def get_leaderboard(self, replay_time_s):
-        session_time = replay_time_s + self.global_start
+        session_time = replay_time_s
+        standings = []
+
+        driver_keys = list(self.driver_status.keys())
+
+        for driver in driver_keys:
+            driver_str = str(driver)
+            lap_now = 1
+            is_active = False
+
+            if driver_str in self.driver_data:
+                data = self.driver_data[driver_str]
+                timestamp = data["timestamps"]
+                laps = data["lap_numbers"]
+
+                if session_time < timestamp[0]:
+                    lap_now = 0
+                elif session_time > timestamp[-1]:
+                    lap_now = int(laps[-1])
+                else:
+                    index = np.searchsorted(timestamp, session_time)
+                    if index < len(laps):
+                        lap_now = int(laps[index])
+                        is_active = True
+                    else:
+                        lap_now = int(laps[-1])
+                
+            status = self.driver_status.get(driver_str, {})
+            display_pos = 20
+            is_dnf = status.get('is_dnf', False)
+
+            if not is_active and driver_str in self.driver_data and session_time > self.driver_data[driver_str]['timestamps'][-1]:
+                if 'Position' in status:
+                    display_pos = int(status['Position'])
+                else:
+                    display_pos = 20
+            
+            elif lap_now <= 1:
+                display_pos = int(status.get('grid', 20))
+                if display_pos == 0: display_pos = 20
+
+            else:
+                target_lap = lap_now - 1
+                if driver_str in self.lap_position_map:
+                    display_pos = self.lap_position_map[driver_str].get(target_lap, int(status.get('grid', 20)))
+                else:
+                    display_pos = int(status.get('grid', 20))
+
+            show_dnf = False
+            if is_dnf:
+                if driver_str in self.driver_data:
+                    if session_time > self.driver_data[driver_str]['timestamps'][-1]:
+                        show_dnf = True
+                else:
+                    show_dnf = True
+
+            if show_dnf:
+                sort_key = 2000 + display_pos
+            else:
+                sort_key = display_pos
+            
+            info = self.session.get_driver(driver_str)
+            current_compound = "UNKNOWN"
+            if driver_str in self.driver_compounds:
+                current_compound = self.driver_compounds[driver_str].get(lap_now, "UNKNOWN")
+            
+            standings.append({
+                "Position": display_pos,
+                "SortKey": sort_key,
+                "driver_number": driver_str,
+                "Abbreviation": info["Abbreviation"],
+                "lap": lap_now,
+                "team": info.get("TeamName", "Unknown"),
+                "Compound" : current_compound,
+                "DNF": show_dnf
+            })
+
+        standings.sort(key=lambda d: d["SortKey"])
+        rank = 1
+        
+        for entry in standings:
+            entry["Position"] = rank
+            rank += 1
+        
+        return standings
+
+        """session_time = replay_time_s + self.global_start
 
         standings = []
 
-        for driver, segments in self.position_timeline.items():
+        for driver in self.position_timeline.keys():
+            segments = self.position_timeline[driver]
             pos_now = None
-            lap_now = None
+            lap_now = 0
 
             for start, end, pos, lap in segments:
                 if start <= session_time < end:
@@ -269,9 +398,15 @@ class RaceData:
 
             if pos_now is None:
                 if segments and session_time > segments[-1][1]:
-                    is_dnf = True
-                    pos_now = segments[-1][2]
-                    lap_now = segments[-1][3]
+                    last_end = segments[-1][1]
+                    status = self.driver_status.get(driver, {'is_dnf': False})
+                    if status["is_dnf"]:
+                        is_dnf = True
+                        pos_now = segments[-1][2]
+                        lap_now = segments[-1][3]
+                    else:
+                        pos_now = segments[-1][2]
+                        lap_now = segments[-1][3]
                 else:
                     continue
 
@@ -281,11 +416,14 @@ class RaceData:
             if str(driver) in self.driver_compounds:
                 current_compound = self.driver_compounds[str(driver)].get(lap_now, "UNKNOWN")
             
-            sort_pos = 1000 + pos_now if is_dnf else pos_now
+            if is_dnf:
+                sort_key = 1000 + (pos_now if pos_now else 20)
+            else:
+                sort_key = pos_now if pos_now else 999
 
             standings.append({
                 "Position": pos_now,
-                "SortKey": sort_pos,
+                "SortKey": sort_key,
                 "driver_number": str(driver),
                 "Abbreviation": abbreviation,
                 "lap": lap_now,
@@ -295,7 +433,7 @@ class RaceData:
             })
            
         standings.sort(key=lambda d: d["Position"])
-        return standings
+        return standings"""
 
     def build_compound_map(self):
         self.driver_compounds = {}
