@@ -4,7 +4,7 @@ from leaderboard import draw_leaderboard
 
 WIDTH, HEIGHT = 1280, 720
 GP_YEAR = 2025
-GP_LOCATION = "Zandvoort"
+GP_LOCATION = "Brazil"
 SESSION_TYPE = "R"
 PLAYBACK_SPEED = 1.0
 

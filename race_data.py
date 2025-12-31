@@ -13,6 +13,7 @@ class RaceData:
         self.driver_data = {}
         self.driver_compounds = {}
         self.driver_status = {}
+        self.pit_windows = {}
         self.track_x = None
         self.track_y = None
         self.track_length = None
@@ -30,11 +31,11 @@ class RaceData:
         self.load_results()
         self.build_compound_map()
         self.load_track()
-        self.build_track_distancee()
         self.load_drivers()
         self.build_lap_timeline()
         self.align_timelines_and_generate_frames()
         self.build_position_timeline()
+        self.build_pit_windows()
 
     def load_session(self):
         print(f"Loading {self.location} {self.year} {self.session_type}")
@@ -359,6 +360,13 @@ class RaceData:
             if driver_str in self.driver_compounds:
                 current_compound = self.driver_compounds[driver_str].get(lap_now, "UNKNOWN")
             
+            is_pitting = False
+            if driver_str in self.pit_windows:
+                for start, end in self.pit_windows[driver_str]:
+                    if start <= replay_time_s <= end:
+                        is_pitting = True
+                        break
+            
             standings.append({
                 "Position": display_pos,
                 "SortKey": sort_key,
@@ -367,8 +375,12 @@ class RaceData:
                 "lap": lap_now,
                 "team": info.get("TeamName", "Unknown"),
                 "Compound" : current_compound,
-                "DNF": show_dnf
+                "DNF": show_dnf,
+                "Pitting": is_pitting
             })
+
+            if driver_str == "1": # Max's number
+                print(f"VER Time: {replay_time_s:.1f} | Windows: {self.pit_windows.get(driver_str, [])}")
 
         standings.sort(key=lambda d: d["SortKey"])
         rank = 1
@@ -378,62 +390,6 @@ class RaceData:
             rank += 1
         
         return standings
-
-        """session_time = replay_time_s + self.global_start
-
-        standings = []
-
-        for driver in self.position_timeline.keys():
-            segments = self.position_timeline[driver]
-            pos_now = None
-            lap_now = 0
-
-            for start, end, pos, lap in segments:
-                if start <= session_time < end:
-                    pos_now = pos
-                    lap_now = lap
-                    break
-            
-            is_dnf = False
-
-            if pos_now is None:
-                if segments and session_time > segments[-1][1]:
-                    last_end = segments[-1][1]
-                    status = self.driver_status.get(driver, {'is_dnf': False})
-                    if status["is_dnf"]:
-                        is_dnf = True
-                        pos_now = segments[-1][2]
-                        lap_now = segments[-1][3]
-                    else:
-                        pos_now = segments[-1][2]
-                        lap_now = segments[-1][3]
-                else:
-                    continue
-
-            info = self.session.get_driver(driver)
-            abbreviation = info["Abbreviation"]
-            current_compound = "UNKNOWN"
-            if str(driver) in self.driver_compounds:
-                current_compound = self.driver_compounds[str(driver)].get(lap_now, "UNKNOWN")
-            
-            if is_dnf:
-                sort_key = 1000 + (pos_now if pos_now else 20)
-            else:
-                sort_key = pos_now if pos_now else 999
-
-            standings.append({
-                "Position": pos_now,
-                "SortKey": sort_key,
-                "driver_number": str(driver),
-                "Abbreviation": abbreviation,
-                "lap": lap_now,
-                "team": info.get("TeamName", "Unknown"),
-                "Compound" : current_compound,
-                "DNF": is_dnf
-            })
-           
-        standings.sort(key=lambda d: d["Position"])
-        return standings"""
 
     def build_compound_map(self):
         self.driver_compounds = {}
@@ -449,62 +405,49 @@ class RaceData:
                 
                 self.driver_compounds[driver_num][lap_number] = compound
     
-    def build_track_distancee(self):
-        track_x = self.track_x
-        track_y = self.track_y
+    def build_pit_windows(self):
 
-        seg_dx = np.diff(track_x)
-        seg_dy = np.diff(track_y)
-        seg_len = np.sqrt((seg_dx)**2 + (seg_dy)**2)
-        cumulative_distances = np.concatenate(([0.0], np.cumsum(seg_len)))
-        self.track_s = cumulative_distances
-        self.track_length = cumulative_distances[-1]
+        if self.session and hasattr(self.session, "laps"):
+            pit_laps = self.session.laps[~self.session.laps["PitInTime"].isna()]
 
-    def project_to_track_position(self, x, y):
-        dx = self.track_x - x
-        dy = self.track_y - y
-        index = np.argmin(dx * dx + dy * dy)
-        return self.track_s[index]
-    
-    def get_visual_leaderboard(self, current_replay_time, min_dt=0.5):
-        if self.last_visual_order is not None:
-            if current_replay_time - self.last_visual_time < min_dt:
-                return self.last_visual_order
-        
-        frame_index = int(current_replay_time / self.frame_interval)
-        frame_index = max(0, min(frame_index, len(self.frames) - 1))
-        frame = self.frames[frame_index]
+            print(f"Total Pit Stops Found in Session: {len(pit_laps)}")
 
-        entries = []
-        for driver, data in frame["drivers"].items():
-            # if not data["active"]:
-                # continue
-            x = data["x"]
-            y = data["y"]
-            projected = self.project_to_track_position(x, y)
-            projected = round(projected/5.0) * 5.0
+            for driver in self.session.drivers:
+                driver_pit_laps = pit_laps[pit_laps["DriverNumber"].astype(str).isin([str(driver)])]
+                windows = []
 
-            entries.append({
-                "Position": None,              
-                "driver_number": str(driver),
-                "Abbreviation": data["abbreviation"],
-                "lap": data["lap"],
-                "projected": projected,
-            })
+                for _, row in driver_pit_laps.iterrows():
+                    try:
+                        pit_in_value = row["PitInTime"]
+                        if pd.isna(pit_in_value): continue
 
-        entries.sort(key=lambda e: e["projected"], reverse=True)
+                        pit_start = pit_in_value.total_seconds()
+                        if self.global_start:
+                            pit_start -= self.global_start
+                    except:
+                        continue
+                
+                pit_end = pit_start + 25.0
 
-        for i, e in enumerate(entries, start=1):
-            e["Position"] = i
+                try:
+                    next_lap = self.session.laps[
+                        (self.session.laps["DriverNumber"].astype(str) == str(driver)) & 
+                        (self.session.laps["LapNumber"] == row["LapNumber"] + 1)
+                    ]
 
-        if self.last_visual_order is not None:
-            last_drivers = [e["driver_number"] for e in self.last_visual_order]
-            new_drivers = [e["driver_number"] for e in entries]
-            if new_drivers == last_drivers:
-                return self.last_visual_order
+                    if not next_lap.empty:
+                        pit_out_value = next_lap.iloc[0]["PitOutTime"]
+                        if not pd.isna(pit_out_value):
+                            end = pit_out_value.total_seconds()
+                            if self.global_start:
+                                end -= self.global_start
+                            
+                            if end > pit_start:
+                                pit_end = end
+                except:
+                    pass
 
-        self.last_visual_order = entries
-        self.last_visual_time = current_replay_time
-        return entries
-
+                windows.append((float(pit_start), float(pit_end)))
+            
+            self.pit_windows[str(driver)] = windows
     

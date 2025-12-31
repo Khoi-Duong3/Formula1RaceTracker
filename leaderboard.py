@@ -49,6 +49,13 @@ def draw_leaderboard(screen, font, title_font, race, current_time):
         screen.blit(text, (panel_rect.x + 10, row_y))
         compound_name = entry.get("Compound", "UNKNOWN")
         
+        if entry["Pitting"]:
+            pit_box_rect = pygame.Rect(220, row_y, 20, 20)
+            pygame.draw.rect(screen, (255, 255, 255), pit_box_rect)
+            p_text = font.render("P", True, (0, 0, 0))
+            p_rect = p_text.get_rect(center=pit_box_rect.center)
+            screen.blit(p_text, p_rect)
+
         if entry["DNF"]:
             dnf_text = font.render("DNF", True, text_color)
             screen.blit(dnf_text, (panel_rect.x + 125, row_y))
