@@ -379,9 +379,6 @@ class RaceData:
                 "Pitting": is_pitting
             })
 
-            if driver_str == "1": # Max's number
-                print(f"VER Time: {replay_time_s:.1f} | Windows: {self.pit_windows.get(driver_str, [])}")
-
         standings.sort(key=lambda d: d["SortKey"])
         rank = 1
         
@@ -406,48 +403,50 @@ class RaceData:
                 self.driver_compounds[driver_num][lap_number] = compound
     
     def build_pit_windows(self):
-
         if self.session and hasattr(self.session, "laps"):
-            pit_laps = self.session.laps[~self.session.laps["PitInTime"].isna()]
+            pit_laps = self.session.laps[~self.session.laps["PitInTime"].isna()].copy()
 
             print(f"Total Pit Stops Found in Session: {len(pit_laps)}")
 
             for driver in self.session.drivers:
-                driver_pit_laps = pit_laps[pit_laps["DriverNumber"].astype(str).isin([str(driver)])]
+
+                driver_pit_laps = pit_laps[pit_laps["DriverNumber"].astype(str) == str(driver)]
+                
+                # Debugging: Check if we are finding laps for this driver
+                if not driver_pit_laps.empty:
+                    print(f"Driver {driver}: Found {len(driver_pit_laps)} pit stops.")
+
                 windows = []
 
                 for _, row in driver_pit_laps.iterrows():
-                    try:
-                        pit_in_value = row["PitInTime"]
-                        if pd.isna(pit_in_value): continue
-
-                        pit_start = pit_in_value.total_seconds()
-                        if self.global_start:
-                            pit_start -= self.global_start
-                    except:
+                    pit_in_value = row["PitInTime"]
+                    
+                    if pd.isna(pit_in_value):
                         continue
-                
-                pit_end = pit_start + 25.0
 
-                try:
+                    pit_start = pit_in_value.total_seconds()
+                    if self.global_start:
+                        pit_start -= self.global_start
+                    
+                    pit_end = pit_start + 25.0
+
+                    next_lap_num = row["LapNumber"] + 1
                     next_lap = self.session.laps[
                         (self.session.laps["DriverNumber"].astype(str) == str(driver)) & 
-                        (self.session.laps["LapNumber"] == row["LapNumber"] + 1)
+                        (self.session.laps["LapNumber"] == next_lap_num)
                     ]
 
                     if not next_lap.empty:
                         pit_out_value = next_lap.iloc[0]["PitOutTime"]
                         if not pd.isna(pit_out_value):
-                            end = pit_out_value.total_seconds()
+                            real_end = pit_out_value.total_seconds()
                             if self.global_start:
-                                end -= self.global_start
+                                real_end -= self.global_start
                             
-                            if end > pit_start:
-                                pit_end = end
-                except:
-                    pass
+                            if real_end > pit_start:
+                                pit_end = real_end
 
-                windows.append((float(pit_start), float(pit_end)))
+                    windows.append((float(pit_start), float(pit_end)))
             
-            self.pit_windows[str(driver)] = windows
+                self.pit_windows[str(driver)] = windows
     

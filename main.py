@@ -2,7 +2,7 @@ import pygame
 from race_data import RaceData
 from leaderboard import draw_leaderboard
 
-WIDTH, HEIGHT = 1280, 720
+WIDTH, HEIGHT = 1600, 900
 GP_YEAR = 2025
 GP_LOCATION = "Brazil"
 SESSION_TYPE = "R"
@@ -17,8 +17,9 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption(f"F1 Race Replay: {GP_LOCATION} {GP_YEAR}")
 clock = pygame.time.Clock()
 
-font = pygame.font.Font(None, 32)
-title_font = pygame.font.Font(None, 48)
+font = pygame.font.Font(None, 22)
+title_font = pygame.font.Font(None, 28)
+driver_font = pygame.font.Font(None, 28)
 
 
 def world_to_screen(x, y):
@@ -38,6 +39,7 @@ def world_to_screen(x, y):
     
     return int(screen_x), int(screen_y)
 
+
 track_points = []
 for i in range(len(race.track_x)):
     sx, sy = world_to_screen(race.track_x[i], race.track_y[i])
@@ -50,7 +52,8 @@ running = True
 print(f"\nStarting replay with {len(race.frames)} frames...")
 print("Controls: SPACE=pause, LEFT/RIGHT=skip, UP/DOWN=speed, ESC=quit\n")
 
-
+header_view_mode = 0
+toggle_btn_rect = pygame.Rect(0, 0, 0, 0) 
 
 while running:
     dt_ms = clock.tick(165)
@@ -76,7 +79,6 @@ while running:
                 PLAYBACK_SPEED = max(0.25, PLAYBACK_SPEED / 2)
                 print(f"Playback speed: {PLAYBACK_SPEED}x")
     
-    # Update frame
     if not paused:
         simulated_dt = dt * PLAYBACK_SPEED
         current_frame += simulated_dt / race.frame_interval
@@ -84,52 +86,41 @@ while running:
             current_frame = len(race.frames) - 1
             paused = True
     
-    # Clear screen
     screen.fill((20, 20, 20))
 
     frame_idx = int(current_frame)
     frame = race.frames[frame_idx]
-    draw_leaderboard(screen, font, title_font, race, frame["time"])
 
-    current_lap = 0
-    for d in frame["drivers"].values():
-        if d["active"]:
-            current_lap = max(current_lap, d["lap"])
+    if event.type == pygame.MOUSEBUTTONDOWN:
+        if event.button == 1:
+             if toggle_btn_rect.collidepoint(event.pos):
+                  header_view_mode = 1 - header_view_mode
+
+    toggle_btn_rect = draw_leaderboard(screen, race, header_view_mode, frame)
     
-    # Draw track
+
     if len(track_points) > 2:
         pygame.draw.aalines(screen, (80, 80, 80), True, track_points, 3)
     
-    # Draw drivers
     for driver_num, driver in frame['drivers'].items():
         sx, sy = world_to_screen(driver['x'], driver['y'])
         
-        # Draw driver circle
         color = driver['colour'] if driver['active'] else (100, 100, 100)
         pygame.draw.circle(screen, color, (sx, sy), 8)
         pygame.draw.circle(screen, (255, 255, 255), (sx, sy), 8, 2)
         
-        # Draw driver abbreviation
-        name_text = font.render(driver['abbreviation'], True, (255, 255, 255))
+        name_text = driver_font.render(driver['abbreviation'], True, (255, 255, 255))
         name_rect = name_text.get_rect(center=(sx, sy - 20))
         screen.blit(name_text, name_rect)
-    
-    # Draw UI
-    time_text = title_font.render(f"Time: {frame['time']:.1f}s", True, (255, 255, 255))
-    screen.blit(time_text, (20, 20))
-    
-    lap_text = title_font.render(f"Lap: {current_lap}/{race.session._total_laps}", True, (255, 255, 255))
-    screen.blit(lap_text, (20, 60))
 
     speed_text = font.render(f"Speed: {PLAYBACK_SPEED}x", True, (255, 255, 255))
-    screen.blit(speed_text, (200,70))
+    screen.blit(speed_text, (20,800))
     
     if paused:
         pause_text = title_font.render("PAUSED", True, (255, 50, 50))
         pause_rect = pause_text.get_rect(center=(WIDTH // 2, 50))
         screen.blit(pause_text, pause_rect)
     
-    # Update display
     pygame.display.flip()
 
 pygame.quit()
