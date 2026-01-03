@@ -2,8 +2,8 @@ import fastf1
 
 session = fastf1.get_session(2025, "Brazil", "R")
 session.load(telemetry=True, weather=False, laps=True)
-pit_laps = session.laps[~session.laps["PitInTime"].isna()]
+laps = session.laps
 
 
-print(f"{pit_laps["DriverNumber"]} {pit_laps["PitInTime"]}")
+print(laps)
 

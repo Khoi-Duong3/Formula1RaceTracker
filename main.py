@@ -4,7 +4,7 @@ from leaderboard import draw_leaderboard
 
 WIDTH, HEIGHT = 1600, 900
 GP_YEAR = 2025
-GP_LOCATION = "Brazil"
+GP_LOCATION = "Monza"
 SESSION_TYPE = "R"
 PLAYBACK_SPEED = 1.0
 
@@ -54,12 +54,13 @@ print("Controls: SPACE=pause, LEFT/RIGHT=skip, UP/DOWN=speed, ESC=quit\n")
 
 header_view_mode = 0
 toggle_btn_rect = pygame.Rect(0, 0, 0, 0) 
+last_toggle_time = 0
 
 while running:
-    dt_ms = clock.tick(165)
+    dt_ms = clock.tick(60)
     dt = dt_ms / 1000.0
+    current_ticks = pygame.time.get_ticks()
 
-    # Event handling
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -78,6 +79,13 @@ while running:
             elif event.key == pygame.K_DOWN:
                 PLAYBACK_SPEED = max(0.25, PLAYBACK_SPEED / 2)
                 print(f"Playback speed: {PLAYBACK_SPEED}x")
+        
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                if current_ticks - last_toggle_time > 200:
+                    if toggle_btn_rect.collidepoint(event.pos):
+                        header_view_mode = 1 - header_view_mode
+                        last_toggle_time = current_ticks
     
     if not paused:
         simulated_dt = dt * PLAYBACK_SPEED
@@ -91,10 +99,6 @@ while running:
     frame_idx = int(current_frame)
     frame = race.frames[frame_idx]
 
-    if event.type == pygame.MOUSEBUTTONDOWN:
-        if event.button == 1:
-             if toggle_btn_rect.collidepoint(event.pos):
-                  header_view_mode = 1 - header_view_mode
 
     toggle_btn_rect = draw_leaderboard(screen, race, header_view_mode, frame)
     
